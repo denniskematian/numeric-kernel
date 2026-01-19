@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\RuntimeCore\RuntimeCore.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Using Include="System"/>
+        <Using Include="System.Collections"/>
+        <Using Include="System.Collections.Generic"/>
+        <Using Include="System.Threading"/>
+        <Using Include="System.IO"/>
+    </ItemGroup>
+
+</Project>
