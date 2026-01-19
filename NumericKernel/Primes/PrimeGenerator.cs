@@ -74,14 +74,6 @@ public class PrimeGenerator : IDisposable
             new WheelFactor(2),
             new WheelFactor(3),
             new WheelFactor(5),
-            new WheelFactor(7),
-            new WheelFactor(11),
-            new WheelFactor(13),
-            new WheelFactor(17),
-            new WheelFactor(19),
-            new WheelFactor(23),
-            new WheelFactor(29),
-            new WheelFactor(31),
         ];
 
         // Cross-out by wheel factorization
