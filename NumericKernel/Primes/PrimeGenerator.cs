@@ -11,14 +11,16 @@ public class PrimeGenerator : IDisposable
 {
     private const int NotGenerated = 0;
     private const int Generating = 1;
-    private const int Generated = 2;
+    private const int PartiallyGenerated = 2;
+    private const int FullyGenerated = 3;
+
     private const long MaxPrime = 1L << IntBits;
     private const int IntBits = sizeof(uint) * 8;
     private const int SegmentSize = 128 * 32 * 1024;
 
     private readonly UnmanagedMemory<uint> _bits = MemoryAllocator.Allocate<uint>((int)(MaxPrime / IntBits));
-    private UnmanagedMemory<PrimeSeed>? _primeSeed;
     private long _currentSegment;
+    private UnmanagedMemory<PrimeSeed>? _primeSeed;
     private volatile int _state = NotGenerated;
 
     public void Dispose()
@@ -34,16 +36,17 @@ public class PrimeGenerator : IDisposable
         {
             case Generating:
                 throw new InvalidOperationException("The generator is currently generating primes.");
-            case Generated:
+            case PartiallyGenerated:
+            case FullyGenerated:
                 return;
         }
 
         _bits[0] = 0xA08A28AC; // bit-packed primes < 32
         WheelFactorization();
         _primeSeed = GeneratePrimeSeed();
-        SegmentedSieve(SegmentSize);
+        _state = PartiallyGenerated;
 
-        _state = Generated;
+        SegmentedSieve(SegmentSize);
     }
 
     public IEnumerable<uint> EnumeratePrimes(long max = MaxPrime)
@@ -60,7 +63,7 @@ public class PrimeGenerator : IDisposable
                 continue;
 
             var num = i * IntBits + j;
-            if(num > _currentSegment)
+            if (num > _currentSegment)
                 SegmentedSieve(_currentSegment + SegmentSize);
 
             if (num >= max) yield break;
@@ -97,19 +100,16 @@ public class PrimeGenerator : IDisposable
 
     public bool IsPrime(long n)
     {
-        if(n < 2) return false;
+        if (n < 2) return false;
 
         Initialize();
-        if (n < _currentSegment)
-        {
-            return (_bits[n / 32] & (1u << (int)(n & 31))) != 0;
-        }
+        if (n < _currentSegment) return (_bits[n >> 5] & (1u << (int)(n & 31))) != 0;
 
         var sqrt = Discrete.Sqrt(n);
         foreach (var prime in EnumeratePrimes())
         {
-            if(n % prime == 0) return false;
-            if(prime > sqrt) break;
+            if (n % prime == 0) return false;
+            if (prime > sqrt) break;
         }
 
         return true;
@@ -117,8 +117,6 @@ public class PrimeGenerator : IDisposable
 
     private void WheelFactorization()
     {
-        Debug.Write("Start wheel factorization... ");
-
         const int maskSize = 3 * 5 * 7 * 11 * 13 * 32 / 32; // lcm of union(primes < 16, 32) / 32
         WheelFactor[] factors =
         [
@@ -215,10 +213,20 @@ public class PrimeGenerator : IDisposable
     private void SegmentedSieve(long segmentSize)
     {
         const int workerCount = 8;
-        if(_currentSegment == MaxPrime || _currentSegment >= segmentSize)
+        if (_currentSegment == MaxPrime || _currentSegment >= segmentSize)
             return;
 
         Debug.Assert(_primeSeed is not null);
+
+        var currentState = Interlocked.CompareExchange(ref _state, Generating, PartiallyGenerated);
+        switch (currentState)
+        {
+            case Generating:
+                throw new InvalidOperationException("The generator is currently generating primes.");
+            case FullyGenerated:
+                return;
+        }
+
         Parallel.For(0, workerCount, t =>
         {
             for (long segment = SegmentSize; segment <= segmentSize; segment += SegmentSize)
@@ -237,10 +245,12 @@ public class PrimeGenerator : IDisposable
         });
 
         _currentSegment = segmentSize;
+        _state = PartiallyGenerated;
         if (_currentSegment == MaxPrime)
         {
             (var primeSeed, _primeSeed) = (_primeSeed, null);
             primeSeed.Dispose();
+            _state = FullyGenerated;
         }
     }
 
