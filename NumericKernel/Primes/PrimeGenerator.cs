@@ -74,8 +74,8 @@ public class PrimeGenerator : IDisposable
     {
         Debug.Write("Start wheel factorization... ");
 
-        const int maskSize = 3 * 5 * 7 * 11 * 13; // lcm of union(primes < 16, 32) / 32
-        using var masks = MemoryAllocator.Allocate<uint>(maskSize);
+        const int maskSize = 3 * 5 * 7 * 11 * 13 * 32 / 32; // lcm of union(primes < 16, 32) / 32
+        // using var masks = MemoryAllocator.Allocate<uint>(maskSize);
         WheelFactor[] factors =
         [
             new(2),
@@ -86,23 +86,26 @@ public class PrimeGenerator : IDisposable
             new(13)
         ];
 
+        long offset = 1;
         for (var i = 0; i < maskSize; i++)
         {
             uint mask = 0;
             for (var j = 0; j < factors.Length; j++) mask |= factors[j].Next();
-            masks[i] = ~mask;
+            _bits[offset++] = ~mask;
         }
 
-        const int segmentSize = maskSize; // 120 * 1024;
-        for (int i = 1, j = 0; i <= segmentSize;)
-        {
-            _bits[i++] = masks[j++];
-            if (j == masks.Length) j = 0;
-        }
-
-        var offset = segmentSize + 1;
+        const int maxChunkSize = 8 * 1024 * 1024;
         ref var chunkRef = ref Unsafe.As<uint, byte>(ref _bits[1]);
-        var byteCount = (uint)(segmentSize * sizeof(uint));
+        var byteCount = (uint)(maskSize * sizeof(uint));
+        while (byteCount < maxChunkSize)
+        {
+            ref var destination = ref Unsafe.As<uint, byte>(ref _bits[offset]);
+            Unsafe.CopyBlock(ref destination, ref chunkRef, byteCount);
+            offset += byteCount / sizeof(uint);
+            byteCount = byteCount << 1;
+        }
+
+        var segmentSize = byteCount / sizeof(uint);
         while (offset + segmentSize < _bits.Length)
         {
             ref var destination = ref Unsafe.As<uint, byte>(ref _bits[offset]);
