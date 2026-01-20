@@ -1,6 +1,6 @@
 ﻿using System.Buffers;
 
-namespace RuntimeCore.Buffers;
+namespace NumericKernel.RuntimeCore.Buffers;
 
 public interface IBuffer<T> : IMemoryOwner<T> where T : unmanaged
 {

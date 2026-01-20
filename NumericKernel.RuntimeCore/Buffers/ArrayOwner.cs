@@ -1,7 +1,7 @@
 ﻿using System.Buffers;
 using System.Runtime.CompilerServices;
 
-namespace RuntimeCore.Buffers;
+namespace NumericKernel.RuntimeCore.Buffers;
 
 public sealed class ArrayOwner<T> : IBuffer<T> where T : unmanaged
 {

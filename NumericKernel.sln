@@ -2,7 +2,7 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NumericKernel", "NumericKernel\NumericKernel.csproj", "{B3772726-8D18-48FA-8E6C-EC9A32E741DB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RuntimeCore", "RuntimeCore\RuntimeCore.csproj", "{C4D4A075-EB59-4B85-BEA8-A38CF7F660FF}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NumericKernel.RuntimeCore", "NumericKernel.RuntimeCore\NumericKernel.RuntimeCore.csproj", "{C4D4A075-EB59-4B85-BEA8-A38CF7F660FF}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Experiment", "Experiment\Experiment.csproj", "{75DFBC9E-9F8D-42BD-A816-2457ACEB6E15}"
 EndProject

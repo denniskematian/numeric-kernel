@@ -1,7 +1,7 @@
 ﻿using System.Buffers;
 using System.Runtime.CompilerServices;
 
-namespace RuntimeCore.Buffers;
+namespace NumericKernel.RuntimeCore.Buffers;
 
 public static class MemoryAllocator
 {

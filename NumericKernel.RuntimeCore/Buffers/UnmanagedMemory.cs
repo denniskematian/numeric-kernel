@@ -2,7 +2,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace RuntimeCore.Buffers;
+namespace NumericKernel.RuntimeCore.Buffers;
 
 public sealed unsafe class UnmanagedMemory<T> : MemoryManager<T>, IBuffer<T> where T : unmanaged
 {
