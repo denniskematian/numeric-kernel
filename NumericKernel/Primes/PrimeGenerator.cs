@@ -212,7 +212,6 @@ public class PrimeGenerator : IDisposable
 
     private void SegmentedSieve(long segmentSize)
     {
-        const int workerCount = 8;
         if (_currentSegment == MaxPrime || _currentSegment >= segmentSize)
             return;
 
@@ -227,19 +226,31 @@ public class PrimeGenerator : IDisposable
                 return;
         }
 
+        int workerCount = Environment.ProcessorCount;
+        var chunkSize = SegmentSize / workerCount;
         Parallel.For(0, workerCount, t =>
         {
-            for (long segment = SegmentSize; segment <= segmentSize; segment += SegmentSize)
-            for (var i = t; i < _primeSeed.Length; i += workerCount)
+            for (long segment = _currentSegment; segment < segmentSize; segment += SegmentSize)
             {
-                ref var seed = ref _primeSeed[i];
-                for (; seed.Current < segment; seed.Current += seed.Base << 1)
+                var start = segment + t * chunkSize;
+                var end = start + chunkSize;
+                for (int i = 0; i < _primeSeed.Length; i++)
                 {
-                    var mask = ~(1u << (int)(seed.Current & 31));
-                    var index = seed.Current >> 5;
-                    var current = _bits[index];
-                    while (current != Interlocked.CompareExchange(ref _bits[index], current & mask, current))
-                        current = _bits[index];
+                    var num = _primeSeed[i].Base;
+                    var pp = (long)num * num;
+                    if (pp >= end) break;
+
+                    var current = pp > start ? pp : Discrete.DivCeil(start, num) * num;
+
+                    if ((current & 1) == 0)
+                        current += num;
+
+                    var step = num * 2L;
+                    while (current < end)
+                    {
+                        _bits[current >> 5] &= ~(1u << (int)(current & 31));
+                        current += step;
+                    }
                 }
             }
         });
