@@ -20,7 +20,7 @@ public class PrimeGenerator : IDisposable
 
     private readonly UnmanagedMemory<uint> _bits = MemoryAllocator.Allocate<uint>((int)(MaxPrime / IntBits));
     private long _currentSegment;
-    private UnmanagedMemory<PrimeSeed>? _primeSeed;
+    private UnmanagedMemory<long>? _primeSeed;
     private volatile int _state = NotGenerated;
 
     public void Dispose()
@@ -166,12 +166,12 @@ public class PrimeGenerator : IDisposable
         }
     }
 
-    private UnmanagedMemory<PrimeSeed> GeneratePrimeSeed()
+    private UnmanagedMemory<long> GeneratePrimeSeed()
     {
         const int seedMax = 65536;
 
         // store primes up to 65536
-        var primeSeed = MemoryAllocator.Allocate<PrimeSeed>(6542 - 6);
+        var primeSeed = MemoryAllocator.Allocate<long>(6542 - 6);
         var n = 0;
 
         for (var i = 17; i < IntBits; i += 2)
@@ -187,7 +187,7 @@ public class PrimeGenerator : IDisposable
                 _bits[k >> 5] &= ~mask;
             }
 
-            primeSeed[n++] = new PrimeSeed((uint)num, k);
+            primeSeed[n++] = num;
         }
 
         for (uint i = 1; i < seedMax >> 5; i++)
@@ -204,7 +204,7 @@ public class PrimeGenerator : IDisposable
                 _bits[k >> 5] &= ~mask;
             }
 
-            primeSeed[n++] = new PrimeSeed((uint)num, k);
+            primeSeed[n++] = num;
         }
 
         return primeSeed;
@@ -236,8 +236,8 @@ public class PrimeGenerator : IDisposable
                 var end = start + chunkSize;
                 for (int i = 0; i < _primeSeed.Length; i++)
                 {
-                    var num = _primeSeed[i].Base;
-                    var pp = (long)num * num;
+                    var num = _primeSeed[i];
+                    var pp = num * num;
                     if (pp >= end) break;
 
                     var current = pp > start ? pp : Discrete.DivCeil(start, num) * num;
@@ -262,19 +262,6 @@ public class PrimeGenerator : IDisposable
             (var primeSeed, _primeSeed) = (_primeSeed, null);
             primeSeed.Dispose();
             _state = FullyGenerated;
-        }
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct PrimeSeed
-    {
-        public readonly uint Base;
-        public long Current;
-
-        public PrimeSeed(uint baseNum, long current)
-        {
-            Base = baseNum;
-            Current = current;
         }
     }
 
