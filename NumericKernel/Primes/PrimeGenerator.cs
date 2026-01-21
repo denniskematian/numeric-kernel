@@ -1,7 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using NumericKernel.RuntimeCore.Buffers;
 
@@ -14,11 +13,11 @@ public class PrimeGenerator : IDisposable
     private const int PartiallyGenerated = 2;
     private const int FullyGenerated = 3;
 
-    private const long MaxPrime = 1L << IntBits;
-    private const int IntBits = sizeof(uint) * 8;
+    private const long MaxPrime = 1L << WordSize;
+    private const int WordSize = sizeof(uint) * 8;
     private const int SegmentSize = 128 * 32 * 1024;
 
-    private readonly UnmanagedMemory<uint> _bits = MemoryAllocator.Allocate<uint>((int)(MaxPrime / IntBits));
+    private readonly UnmanagedMemory<uint> _bits = MemoryAllocator.Allocate<uint>((int)(MaxPrime / WordSize));
     private long _currentSegment;
     private UnmanagedMemory<long>? _primeSeed;
     private volatile int _state = NotGenerated;
@@ -57,16 +56,20 @@ public class PrimeGenerator : IDisposable
         Initialize();
         yield return 2;
         for (uint i = 0; i < _bits.Length; i++)
-        for (var j = 1; j < IntBits; j += 2)
+        for (var j = 1; j < WordSize; j += 2)
         {
             if ((_bits[i] & (1u << j)) == 0)
                 continue;
 
-            var num = i * IntBits + j;
-            if (num > _currentSegment)
-                SegmentedSieve(_currentSegment + SegmentSize);
-
+            var num = i * WordSize + j;
             if (num >= max) yield break;
+            if (num > _currentSegment)
+            {
+                SegmentedSieve(_currentSegment + SegmentSize);
+                if ((_bits[i] & (1u << j)) == 0)
+                    continue;
+            }
+
             yield return (uint)num;
         }
     }
@@ -84,15 +87,14 @@ public class PrimeGenerator : IDisposable
         }
 
         var count = 0;
-        var length = max / IntBits;
-        var remainder = max % IntBits;
-        var i = 0;
-        for (; i < length; i++) count += BitOperations.PopCount(_bits[i]);
+        var length = max / WordSize;
+        var remainder = max % WordSize;
+        for (var i = 0; i < length; i++) count += BitOperations.PopCount(_bits[i]);
 
         if (remainder != 0)
         {
             var mask = (1u << (int)remainder) - 1;
-            count += BitOperations.PopCount(_bits[i] & mask);
+            count += BitOperations.PopCount(_bits[length] & mask);
         }
 
         return count;
@@ -103,7 +105,14 @@ public class PrimeGenerator : IDisposable
         if (n < 2) return false;
 
         Initialize();
-        if (n < _currentSegment) return (_bits[n >> 5] & (1u << (int)(n & 31))) != 0;
+        if (n < _currentSegment) return IsBitSet(n);
+
+        if (n < MaxPrime)
+        {
+            var nextSegment = Discrete.DivCeil(n, SegmentSize) * SegmentSize;
+            SegmentedSieve(nextSegment);
+            return IsBitSet(n);
+        }
 
         var sqrt = Discrete.Sqrt(n);
         foreach (var prime in EnumeratePrimes())
@@ -174,35 +183,26 @@ public class PrimeGenerator : IDisposable
         var primeSeed = MemoryAllocator.Allocate<long>(6542 - 6);
         var n = 0;
 
-        for (var i = 17; i < IntBits; i += 2)
+        for (var num = 17; num < WordSize; num += 2)
         {
-            if ((_bits[0] & (1u << i)) == 0)
+            if ((_bits[0] & (1u << num)) == 0)
                 continue;
 
-            long num = i;
-            var k = num * 3L;
-            for (; k < seedMax; k += num << 1)
-            {
-                var mask = 1u << (int)(k & 31);
-                _bits[k >> 5] &= ~mask;
-            }
+            var k = num * num;
+            for (; k < seedMax; k += num << 1) ClearBit(k);
 
             primeSeed[n++] = num;
         }
 
         for (uint i = 1; i < seedMax >> 5; i++)
-        for (var j = 1; j < IntBits; j += 2)
+        for (var j = 1; j < WordSize; j += 2)
         {
             if ((_bits[i] & (1u << j)) == 0)
                 continue;
 
-            var num = i * IntBits + j;
-            var k = num * 3L;
-            for (; k < seedMax; k += num << 1)
-            {
-                var mask = 1u << (int)(k & 31);
-                _bits[k >> 5] &= ~mask;
-            }
+            var num = i * WordSize + j;
+            var k = num * num;
+            for (; k < seedMax; k += num << 1) ClearBit(k);
 
             primeSeed[n++] = num;
         }
@@ -226,15 +226,15 @@ public class PrimeGenerator : IDisposable
                 return;
         }
 
-        int workerCount = Environment.ProcessorCount;
+        var workerCount = Environment.ProcessorCount;
         var chunkSize = SegmentSize / workerCount;
         Parallel.For(0, workerCount, t =>
         {
-            for (long segment = _currentSegment; segment < segmentSize; segment += SegmentSize)
+            for (var segment = _currentSegment; segment < segmentSize; segment += SegmentSize)
             {
                 var start = segment + t * chunkSize;
                 var end = start + chunkSize;
-                for (int i = 0; i < _primeSeed.Length; i++)
+                for (var i = 0; i < _primeSeed.Length; i++)
                 {
                     var num = _primeSeed[i];
                     var pp = num * num;
@@ -248,7 +248,7 @@ public class PrimeGenerator : IDisposable
                     var step = num * 2L;
                     while (current < end)
                     {
-                        _bits[current >> 5] &= ~(1u << (int)(current & 31));
+                        ClearBit(current);
                         current += step;
                     }
                 }
@@ -265,6 +265,18 @@ public class PrimeGenerator : IDisposable
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void ClearBit(long index)
+    {
+        _bits[index >> 5] &= ~(1u << (int)(index & 31));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool IsBitSet(long index)
+    {
+        return (_bits[index >> 5] & (1u << (int)(index & 31))) != 0;
+    }
+
     private class WheelFactor
     {
         private readonly uint[] _wheel;
@@ -277,12 +289,12 @@ public class PrimeGenerator : IDisposable
             while (true)
             {
                 uint mask = 0;
-                for (; shift < IntBits; shift += n) mask |= 1u << shift;
+                for (; shift < WordSize; shift += n) mask |= 1u << shift;
 
                 if (list.Contains(mask)) break;
                 list.Add(mask);
 
-                shift -= IntBits;
+                shift -= WordSize;
             }
 
             _wheel = list.ToArray();
