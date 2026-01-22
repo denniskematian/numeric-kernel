@@ -8,6 +8,8 @@ namespace NumericKernel.Primes;
 
 public class PrimeGenerator : IDisposable
 {
+    public static PrimeGenerator Shared { get; } = new();
+    
     private const int NotGenerated = 0;
     private const int Generating = 1;
     private const int PartiallyGenerated = 2;
@@ -16,6 +18,7 @@ public class PrimeGenerator : IDisposable
     private const long MaxPrime = 1L << WordSize;
     private const int WordSize = sizeof(uint) * 8;
     private const int SegmentSize = 128 * 32 * 1024;
+    private const long PrimeCount = 203280221;
 
     private readonly UnmanagedMemory<uint> _bits = MemoryAllocator.Allocate<uint>((int)(MaxPrime / WordSize));
     private long _currentSegment;
@@ -98,6 +101,43 @@ public class PrimeGenerator : IDisposable
         }
 
         return count;
+    }
+
+    public long NthPrime(long n)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(n);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(n, PrimeCount);
+
+        if (n == 0) return 2;
+        
+        Initialize();
+        var count = 0L;
+        for (long i = 0; i < _bits.Length; i++)
+        {
+            var num = i * WordSize;
+            if(num > _currentSegment)
+            {
+                SegmentedSieve(_currentSegment + SegmentSize);
+            }
+
+            var c = count + BitOperations.PopCount(_bits[i]);
+            if (n < c)
+            {
+                for (int j = 0; j < WordSize; j++, num++)
+                {
+                    if ((_bits[i] & (1u << j)) != 0 && count++ == n)
+                    {
+                        return num;
+                    }
+                }
+
+                // throw new InvalidOperationException($"Prime count is incorrect. {n}");
+            }
+
+            count = c;
+        }
+
+        throw new InvalidOperationException($"Prime count is incorrect. {n}");
     }
 
     public bool IsPrime(long n)
