@@ -6,6 +6,10 @@
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+      <DefineConstants>TRACE;UNCHECKED</DefineConstants>
+    </PropertyGroup>
     
     <ItemGroup>
         <Using Include="System"/>

@@ -9,11 +9,6 @@ namespace NumericKernel.Primes;
 public class PrimeGenerator : IDisposable
 {
     public static PrimeGenerator Shared { get; } = new();
-    
-    private const int NotGenerated = 0;
-    private const int Generating = 1;
-    private const int PartiallyGenerated = 2;
-    private const int FullyGenerated = 3;
 
     private const long MaxPrime = 1L << WordSize;
     private const int WordSize = sizeof(uint) * 8;
@@ -23,7 +18,14 @@ public class PrimeGenerator : IDisposable
     private readonly UnmanagedMemory<uint> _bits = MemoryAllocator.Allocate<uint>((int)(MaxPrime / WordSize));
     private long _currentSegment;
     private UnmanagedMemory<long>? _primeSeed;
-    private volatile int _state = NotGenerated;
+    private readonly Lock _lock = new();
+
+    private PrimeGenerator()
+    {
+        _bits[0] = 0xA08A28AC; // bit-packed primes < 32
+        WheelFactorization();
+        _primeSeed = GeneratePrimeSeed();
+    }
 
     public void Dispose()
     {
@@ -31,45 +33,22 @@ public class PrimeGenerator : IDisposable
         _primeSeed?.Dispose();
     }
 
-    private void Initialize()
-    {
-        var currentState = Interlocked.CompareExchange(ref _state, Generating, NotGenerated);
-        switch (currentState)
-        {
-            case Generating:
-                throw new InvalidOperationException("The generator is currently generating primes.");
-            case PartiallyGenerated:
-            case FullyGenerated:
-                return;
-        }
-
-        _bits[0] = 0xA08A28AC; // bit-packed primes < 32
-        WheelFactorization();
-        _primeSeed = GeneratePrimeSeed();
-        _state = PartiallyGenerated;
-
-        SegmentedSieve(SegmentSize);
-    }
-
     public IEnumerable<uint> EnumeratePrimes(long max = MaxPrime)
     {
         if (max < 2) yield break;
         ArgumentOutOfRangeException.ThrowIfGreaterThan(max, MaxPrime);
 
-        Initialize();
         yield return 2;
         for (uint i = 0; i < _bits.Length; i++)
         for (var j = 1; j < WordSize; j += 2)
         {
-            if ((_bits[i] & (1u << j)) == 0)
-                continue;
-
+            if (!IsBitSet(i, j)) continue;
             var num = i * WordSize + j;
             if (num >= max) yield break;
             if (num > _currentSegment)
             {
                 SegmentedSieve(_currentSegment + SegmentSize);
-                if ((_bits[i] & (1u << j)) == 0)
+                if (!IsBitSet(i, j))
                     continue;
             }
 
@@ -82,7 +61,6 @@ public class PrimeGenerator : IDisposable
         if (max < 2) return 0;
         ArgumentOutOfRangeException.ThrowIfGreaterThan(max, MaxPrime);
 
-        Initialize();
         if (max > _currentSegment)
         {
             var nextSegment = Discrete.DivCeil(max, SegmentSize) * SegmentSize;
@@ -109,13 +87,12 @@ public class PrimeGenerator : IDisposable
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(n, PrimeCount);
 
         if (n == 0) return 2;
-        
-        Initialize();
+
         var count = 0L;
         for (long i = 0; i < _bits.Length; i++)
         {
             var num = i * WordSize;
-            if(num > _currentSegment)
+            if (num > _currentSegment)
             {
                 SegmentedSieve(_currentSegment + SegmentSize);
             }
@@ -125,26 +102,25 @@ public class PrimeGenerator : IDisposable
             {
                 for (int j = 0; j < WordSize; j++, num++)
                 {
-                    if ((_bits[i] & (1u << j)) != 0 && count++ == n)
+                    if (IsBitSet(i, j) && count++ == n)
                     {
                         return num;
                     }
                 }
 
-                // throw new InvalidOperationException($"Prime count is incorrect. {n}");
+                // throw new InvalidOperationException("Prime count is incorrect.");
             }
 
             count = c;
         }
 
-        throw new InvalidOperationException($"Prime count is incorrect. {n}");
+        throw new InvalidOperationException("Prime count is incorrect.");
     }
 
     public bool IsPrime(long n)
     {
         if (n < 2) return false;
 
-        Initialize();
         if (n < _currentSegment) return IsBitSet(n);
 
         if (n < MaxPrime)
@@ -225,7 +201,7 @@ public class PrimeGenerator : IDisposable
 
         for (var num = 17; num < WordSize; num += 2)
         {
-            if ((_bits[0] & (1u << num)) == 0)
+            if (!IsBitSet(0, num))
                 continue;
 
             var k = num * num;
@@ -237,7 +213,7 @@ public class PrimeGenerator : IDisposable
         for (uint i = 1; i < seedMax >> 5; i++)
         for (var j = 1; j < WordSize; j += 2)
         {
-            if ((_bits[i] & (1u << j)) == 0)
+            if (!IsBitSet(i, j))
                 continue;
 
             var num = i * WordSize + j;
@@ -252,19 +228,18 @@ public class PrimeGenerator : IDisposable
 
     private void SegmentedSieve(long segmentSize)
     {
-        if (_currentSegment == MaxPrime || _currentSegment >= segmentSize)
-            return;
-
-        Debug.Assert(_primeSeed is not null);
-
-        var currentState = Interlocked.CompareExchange(ref _state, Generating, PartiallyGenerated);
-        switch (currentState)
+        if (_currentSegment == MaxPrime || _currentSegment >= segmentSize) return;
+        lock (_lock)
         {
-            case Generating:
-                throw new InvalidOperationException("The generator is currently generating primes.");
-            case FullyGenerated:
-                return;
+            if (_currentSegment != MaxPrime && _currentSegment < segmentSize)
+                SegmentedSieveCore(segmentSize);
         }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void SegmentedSieveCore(long segmentSize)
+    {
+        Debug.Assert(_primeSeed is not null);
 
         var workerCount = Environment.ProcessorCount;
         var chunkSize = SegmentSize / workerCount;
@@ -296,12 +271,10 @@ public class PrimeGenerator : IDisposable
         });
 
         _currentSegment = segmentSize;
-        _state = PartiallyGenerated;
         if (_currentSegment == MaxPrime)
         {
             (var primeSeed, _primeSeed) = (_primeSeed, null);
             primeSeed.Dispose();
-            _state = FullyGenerated;
         }
     }
 
@@ -315,6 +288,12 @@ public class PrimeGenerator : IDisposable
     private bool IsBitSet(long index)
     {
         return (_bits[index >> 5] & (1u << (int)(index & 31))) != 0;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool IsBitSet(long wordIndex, int bitIndex)
+    {
+        return (_bits[wordIndex] & (1u << bitIndex)) != 0;
     }
 
     private class WheelFactor
