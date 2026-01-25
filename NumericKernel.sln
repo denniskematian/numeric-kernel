@@ -6,6 +6,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NumericKernel.RuntimeCore",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Experiment", "Experiment\Experiment.csproj", "{75DFBC9E-9F8D-42BD-A816-2457ACEB6E15}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NumericKernel.Benchmark", "NumericKernel.Benchmark\NumericKernel.Benchmark.csproj", "{EBBD54D7-34A2-42CE-BE68-207B5FAA75AB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,5 +26,9 @@ Global
 		{75DFBC9E-9F8D-42BD-A816-2457ACEB6E15}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{75DFBC9E-9F8D-42BD-A816-2457ACEB6E15}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{75DFBC9E-9F8D-42BD-A816-2457ACEB6E15}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EBBD54D7-34A2-42CE-BE68-207B5FAA75AB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EBBD54D7-34A2-42CE-BE68-207B5FAA75AB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EBBD54D7-34A2-42CE-BE68-207B5FAA75AB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EBBD54D7-34A2-42CE-BE68-207B5FAA75AB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

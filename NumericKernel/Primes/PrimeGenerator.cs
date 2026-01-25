@@ -6,21 +6,20 @@ using NumericKernel.RuntimeCore.Buffers;
 
 namespace NumericKernel.Primes;
 
-public class PrimeGenerator : IDisposable
+internal class PrimeGenerator : IDisposable
 {
-    public static PrimeGenerator Shared { get; } = new();
-
-    private const long MaxPrime = 1L << WordSize;
+    public const long MaxPrime = 1L << WordSize;
     private const int WordSize = sizeof(uint) * 8;
     private const int SegmentSize = 128 * 32 * 1024;
-    private const long PrimeCount = 203280221;
+    private const long PrimeCount32 = 203280221; // pi(2^32)
+    private const int PrimeCount16 = 6542; // pi(2^16)
 
     private readonly UnmanagedMemory<uint> _bits = MemoryAllocator.Allocate<uint>((int)(MaxPrime / WordSize));
     private long _currentSegment;
     private UnmanagedMemory<long>? _primeSeed;
     private readonly Lock _lock = new();
 
-    private PrimeGenerator()
+    internal PrimeGenerator()
     {
         _bits[0] = 0xA08A28AC; // bit-packed primes < 32
         WheelFactorization();
@@ -84,7 +83,7 @@ public class PrimeGenerator : IDisposable
     public long NthPrime(long n)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(n);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(n, PrimeCount);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(n, PrimeCount32);
 
         if (n == 0) return 2;
 
@@ -108,7 +107,7 @@ public class PrimeGenerator : IDisposable
                     }
                 }
 
-                // throw new InvalidOperationException("Prime count is incorrect.");
+                break;
             }
 
             count = c;
@@ -142,7 +141,7 @@ public class PrimeGenerator : IDisposable
 
     private void WheelFactorization()
     {
-        const int maskSize = 3 * 5 * 7 * 11 * 13 * 32 / 32; // lcm of union(primes < 16, 32) / 32
+        const int maskSize = 3 * 5 * 7 * 11 * 13 * 32 / 32; // LCM of (16#, 32)
         WheelFactor[] factors =
         [
             new(2),
@@ -195,8 +194,8 @@ public class PrimeGenerator : IDisposable
     {
         const int seedMax = 65536;
 
-        // store primes up to 65536
-        var primeSeed = MemoryAllocator.Allocate<long>(6542 - 6);
+        // store primes up to 65,536
+        var primeSeed = MemoryAllocator.Allocate<long>(PrimeCount16 - 6);
         var n = 0;
 
         for (var num = 17; num < WordSize; num += 2)
@@ -218,9 +217,10 @@ public class PrimeGenerator : IDisposable
 
             var num = i * WordSize + j;
             var k = num * num;
-            for (; k < seedMax; k += num << 1) ClearBit(k);
+            num = num << 1;
+            for (; k < seedMax; k += num) ClearBit(k);
 
-            primeSeed[n++] = num;
+            primeSeed[n++] = num >> 1;
         }
 
         return primeSeed;
@@ -241,6 +241,7 @@ public class PrimeGenerator : IDisposable
     {
         Debug.Assert(_primeSeed is not null);
 
+        // TODO: ensure worker count align with segment size
         var workerCount = Environment.ProcessorCount;
         var chunkSize = SegmentSize / workerCount;
         Parallel.For(0, workerCount, t =>
